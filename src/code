@@ -1,0 +1,155 @@
+import time
+from datetime import datetime, timedelta, timezone
+import multiprocessing
+import threading
+
+
+def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n-i-1):
+            if arr[j] > arr[j+1]:
+                arr[j], arr[j+1] = arr[j+1], arr[j]
+    return arr
+
+def merge(left, right):
+    result = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] < right[j]:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result
+
+def bubble_sort_thread(arr, result_list):
+    result_list.append(bubble_sort(arr))
+
+def merge_thread(left, right, result_list):
+    result_list.append(merge(left, right))
+
+if __name__ == '__main__':    
+
+    while True:
+        input_filename = input("請輸入檔案名稱：\n")
+        try:
+            with open(input_filename + ".txt", 'r') as input_file:
+                numbers = [int(line.strip()) for line in input_file.readlines()]
+            break  # 如果成功讀取檔案，跳出迴圈
+        except FileNotFoundError:
+            print("檔案不存在，請重新輸入。\n")
+
+    k = int(input("切成幾份:\n"))
+
+    if k < len(numbers):
+        # 切成K份，放在partitions
+        partition_size = len(numbers) // k
+        partitions = [numbers[i:i+partition_size] for i in range(0, len(numbers), partition_size)]
+    
+        methods = int(input("請輸入方法編號(1、2、3、4):\n"))
+
+        if methods == 1:
+            start_time = time.time()
+            # 使用泡沫排序對數字進行排序
+            result = bubble_sort(numbers)
+            end_time = time.time()
+            output_filename = input_filename+"_output1.txt"
+
+        elif methods == 2:
+            start_time = time.time()
+            for partition in partitions:
+                bubble_sort(partition)
+
+            # 對兩兩相鄰的分片進行合併排序
+            while len(partitions) > 1:
+                next_partitions = []
+                for i in range(0, len(partitions)-1, 2):
+                    next_partitions.append(merge(partitions[i], partitions[i+1]))
+                if len(partitions) % 2 == 1:
+                    next_partitions.append(partitions[-1])
+                partitions = next_partitions
+
+            # 計算排序後的時間
+            end_time = time.time()
+            result = partitions[0]
+            output_filename = input_filename+"_output2.txt"
+
+        elif methods == 3:
+            start_time = time.time()
+
+            # 使用multiprocessing來同時對 K 個分片做泡沫排序
+            with multiprocessing.Pool(processes=k) as pool:
+                sorted_partitions = pool.map(bubble_sort, partitions)
+
+            # 使用multiprocessing來對 K-1 個分片做合併排序
+            while len(sorted_partitions) > 1:
+                next_partitions = []
+                merge_processes = len(sorted_partitions) // 2
+                with multiprocessing.Pool(processes=merge_processes) as merge_pool:
+                    for i in range(0, len(sorted_partitions)-1, 2):
+                        print("next_partitions: ", next_partitions)
+                        next_partitions.append(merge_pool.apply(merge, (sorted_partitions[i], sorted_partitions[i+1])))
+                        print("next_partitions'': ", next_partitions)
+                    if len(sorted_partitions) % 2 == 1:
+                        print("sorted_partitions[-1]: ", sorted_partitions[-1])
+                        next_partitions.append(sorted_partitions[-1])
+                sorted_partitions = next_partitions
+                print("sorted_partitions: ", sorted_partitions)
+
+            end_time = time.time()
+            result = sorted_partitions[0]
+            output_filename = input_filename+"_output3.txt"
+
+        elif methods == 4:
+            start_time = time.time()
+            
+            bubble_sort_threads = []
+            sorted_partitions = []
+            for partition in partitions:
+                thread = threading.Thread(target=bubble_sort_thread, args=(partition, sorted_partitions))
+                bubble_sort_threads.append(thread)
+                thread.start()
+
+            for thread in bubble_sort_threads:
+                thread.join()
+
+            while len(sorted_partitions) > 1:
+                next_partitions = []
+                merge_threads = []
+                for i in range(0, len(sorted_partitions)-1, 2):
+                    thread = threading.Thread(target=merge_thread, args=(sorted_partitions[i], sorted_partitions[i+1], next_partitions))
+                    merge_threads.append(thread)
+                    thread.start()
+                if len(sorted_partitions) % 2 == 1:
+                    next_partitions.append(sorted_partitions[-1])
+                for thread in merge_threads:
+                    thread.join()
+                sorted_partitions = next_partitions
+
+            end_time = time.time()
+            result = sorted_partitions[0]
+            output_filename = input_filename+"_output4.txt"
+        else:
+            output_filename = "error"
+            print("沒有這個方法")
+            
+
+        if output_filename != "error":
+            # 將排序後的結果寫入新的檔案
+            with open(output_filename, 'w', encoding='utf-8') as output_file:
+                output_file.write("Sort:\n")
+                for number in result:
+                    output_file.write(f"{number}\n")
+
+                # 寫入CPU執行時間
+                cpu_time = end_time - start_time
+                output_file.write(f"CPU Time： {cpu_time} \n")
+
+                # 寫入輸出時間（UTC+8）
+                utc8 = timezone(timedelta(hours=8))
+                now_utc8 = datetime.now(utc8)
+                output_file.write(f"Output Time： {now_utc8.strftime('%Y-%m-%d %H:%M:%S')}\n")
